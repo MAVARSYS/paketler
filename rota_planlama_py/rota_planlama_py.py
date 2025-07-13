@@ -1,26 +1,29 @@
 import numpy as np
-import pandas as pd
 import folium
-from folium.plugins import TimestampedGeoJson
-import re
+import pandas as pd
 import heapq
-from datetime import datetime, timedelta
+import json
+import re
 
-# ------------------------
-# A* Algoritması
-# ------------------------
+# -------------------- A* için yardımcı fonksiyonlar --------------------
+
 def heuristic(a, b):
-    return abs(a[0] - b[0]) + abs(a[1] - b[1])  # Manhattan mesafesi
+    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5  # Euclidean
 
 def astar(start, goal, grid):
     rows, cols = grid.shape
     open_set = []
-    heapq.heappush(open_set, (0 + heuristic(start, goal), 0, start, [start]))  # (f, g, node, path)
+    heapq.heappush(open_set, (0 + heuristic(start, goal), 0, start, [start]))
     visited = set()
 
     def neighbors(node):
         r, c = node
-        for nr, nc in [(r+1,c), (r-1,c), (r,c+1), (r,c-1)]:
+        directions = [
+            (1, 0), (-1, 0), (0, 1), (0, -1),     # N, S, E, W
+            (-1, -1), (-1, 1), (1, -1), (1, 1)    # NW, NE, SW, SE
+        ]
+        for dr, dc in directions:
+            nr, nc = r + dr, c + dc
             if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] == 0:
                 yield (nr, nc)
 
@@ -28,22 +31,18 @@ def astar(start, goal, grid):
         f, g, current, path = heapq.heappop(open_set)
         if current == goal:
             return path
-
         if current in visited:
             continue
         visited.add(current)
-
         for n in neighbors(current):
             if n not in visited:
-                new_g = g + 1
+                new_g = g + heuristic(current, n)
                 new_f = new_g + heuristic(n, goal)
                 heapq.heappush(open_set, (new_f, new_g, n, path + [n]))
+    return None
 
-    return None  # Yol bulunamadı
+# -------------------- Grid ↔ GPS Dönüşümü --------------------
 
-# ------------------------
-# GPS <-> Grid dönüşüm fonksiyonları
-# ------------------------
 def latlon_to_grid(lat, lon, bounds, grid_size):
     lat_min, lon_min, lat_max, lon_max = bounds
     rows, cols = grid_size
@@ -58,9 +57,8 @@ def grid_to_latlon(row, col, bounds, grid_size):
     lon = lon_min + (col / (cols - 1)) * (lon_max - lon_min)
     return lat, lon
 
-# ------------------------
-# CSV'den GPS verisi alma
-# ------------------------
+# -------------------- GPS CSV'den yükle --------------------
+
 def load_gps_coordinates_from_csv(csv_path):
     df = pd.read_csv(csv_path)
     gps_coords = []
@@ -76,28 +74,19 @@ def load_gps_coordinates_from_csv(csv_path):
             continue
     return gps_coords
 
-# ------------------------
-# Ana program
-# ------------------------
+# -------------------- Ana Program --------------------
 
 def main():
-    # Parametreler
-    grid_size = (50, 50)
-    bounds = [41.052, 28.592, 41.0423, 28.6052]
-
-    # Grid oluştur, statik engel ekle
-    grid = np.zeros(grid_size)
-    grid[20:25, 10:40] = 1  # Engel bölgesi
-
-    # CSV dosya yolu
+    # Dosya yolları
     csv_path = r"D:\MAVARSYS\01_Calismalar\01_Rota_Planlama\paketler\rota_planlama_py\koordinatlar.csv"
+    hedef_json_path = "hedef_koordinat.json"
+
     coords = load_gps_coordinates_from_csv(csv_path)
-
-
     if not coords:
         print("Koordinat bulunamadı.")
         return
-    # Otomatik bounds belirle
+
+    # Bounds'ı veriden otomatik al
     latitudes = [lat for lat, lon in coords]
     longitudes = [lon for lat, lon in coords]
     margin = 0.0005
@@ -105,90 +94,58 @@ def main():
     lat_max = max(latitudes) + margin
     lon_min = min(longitudes) - margin
     lon_max = max(longitudes) + margin
-    bounds = [lat_min, lon_min, lat_max, lon_max] 
+    bounds = [lat_min, lon_min, lat_max, lon_max]
 
-    # Grid oluştur
-    grid_size = (50, 50)
+    # Grid boyutu ve engel
+    grid_size = (60, 60)
     grid = np.zeros(grid_size)
-    grid[20:25, 10:40] = 1  # Statik engel  
+    grid[25:30, 15:45] = 1  # Statik engel
 
-    # Start / goal dönüşümü
-    goal_latlon = (41.0786, 28.6252)  # haritada tıkladığın nokta
-
+    # Başlangıç noktası
     start = latlon_to_grid(*coords[0], bounds, grid_size)
+
+    # Haritada seçilmiş hedef koordinatını oku
+    with open(hedef_json_path) as f:
+        hedef_data = json.load(f)
+    goal_latlon = (hedef_data['lat'], hedef_data['lon'])
     goal = latlon_to_grid(*goal_latlon, bounds, grid_size)
 
-    # A* ile yol bul
+    print(f"Start grid: {start}, Goal grid: {goal}")
+
+    if grid[start[0], start[1]] == 1 or grid[goal[0], goal[1]] == 1:
+        print("Start veya Goal engel üstünde!")
+        return
+
+    # A* rotasını bul
     path = astar(start, goal, grid)
-
-    print(f"Start grid koordinatı: {start}, değeri: {grid[start[0], start[1]]}")
-    print(f"Goal grid koordinatı: {goal}, değeri: {grid[goal[0], goal[1]]}")
-
-
     if path is None:
         print("Yol bulunamadı.")
         return
 
-    print(f"Yol bulundu, uzunluk: {len(path)}")
+    print(f"Yol uzunluğu: {len(path)}")
 
-    # Harita oluştur
+    # Harita görselleştirme
     center_lat, center_lon = coords[0]
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=15)
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=17)
 
-    # Zaman başlangıcı
-    start_time = datetime.now()
+    # Başlangıç ve hedef
+    folium.Marker(location=coords[0], popup="Start", icon=folium.Icon(color='green')).add_to(m)
+    folium.Marker(location=goal_latlon, popup="Goal", icon=folium.Icon(color='red')).add_to(m)
 
-    # Yol noktalarını GeoJSON formatına dönüştür
-    features = []
-    for i, (r, c) in enumerate(path):
-        lat, lon = grid_to_latlon(r, c, bounds, grid_size)
-        time = (start_time + timedelta(seconds=i)).isoformat()
-        features.append({
-            'type': 'Feature',
-            'geometry': {'type': 'Point', 'coordinates': [lon, lat]},
-            'properties': {
-                'time': time,
-                'style': {'color': 'red'},
-                'icon': 'circle',
-                'iconstyle': {
-                    'fillColor': 'red',
-                    'fillOpacity': 0.8,
-                    'stroke': 'true',
-                    'radius': 6
-                },
-                'popup': f"Path point {i+1}: {lat:.6f}, {lon:.6f}"
-            }
-        })
-
-    # Statik engelleri yeşil renkte göster
+    # Statik engelleri çiz
     for r in range(grid_size[0]):
         for c in range(grid_size[1]):
             if grid[r, c] == 1:
                 lat, lon = grid_to_latlon(r, c, bounds, grid_size)
-                folium.CircleMarker(location=[lat, lon], radius=3, color='green', fill=True, fill_opacity=0.5).add_to(m)
+                folium.CircleMarker(location=[lat, lon], radius=2, color='black', fill=True).add_to(m)
 
-    # Animasyon ekle
-    timestamped_geojson = {
-        'type': 'FeatureCollection',
-        'features': features,
-    }
+    # A* yolunu çiz
+    path_latlon = [grid_to_latlon(r, c, bounds, grid_size) for r, c in path]
+    folium.PolyLine(path_latlon, color="blue", weight=4, opacity=0.7, tooltip="A* Rota").add_to(m)
 
-    TimestampedGeoJson(
-        timestamped_geojson,
-        period='PT1S',
-        add_last_point=True,
-        auto_play=True,
-        loop=False,
-        max_speed=1,
-        loop_button=True,
-        date_options='YYYY/MM/DD HH:mm:ss',
-        time_slider_drag_update=True
-    ).add_to(m)
-
-    # Haritayı kaydet
-    output_file = 'astar_path_animation.html'
-    m.save(output_file)
-    print(f"Animasyon haritası '{output_file}' olarak kaydedildi.")
+    # Kaydet ve göster
+    m.save("astar_8_yon_harita.html")
+    print("Harita kaydedildi: astar_8_yon_harita.html")
 
 if __name__ == "__main__":
     main()
