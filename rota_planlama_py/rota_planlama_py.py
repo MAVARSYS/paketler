@@ -1,43 +1,35 @@
-# ------------------------------
-# O zaman sana Global Path + Local Cost Map + Gerçek Zamanlı Engel Kaçınma mantığını bir Python prototipinde örnekle göstereyim.
-# Bu örnek:
-# ✅ Basit bir grid harita (statik engeller)
-# ✅ Gerçek zamanlı dinamik engeller (simüle edilmiş)
-# ✅ Bir A* fonksiyonu
-# ✅ Bir örnek simülasyon döngüsü içerir.
-# ✅ matplotlib ile görsel animasyon oluşturur.
-# ------------------------------
-
-
 import numpy as np
 import matplotlib.pyplot as plt
 from queue import PriorityQueue
+import cv2
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 # ------------------------------
-# Basit A* Pathfinding Fonksiyonu
+# A* algoritması (visited biriktirme)
 # ------------------------------
 
-def astar(grid, start, goal):
+def astar_with_visited(grid, start, goal):
     rows, cols = grid.shape
     open_set = PriorityQueue()
     open_set.put((0, start))
     came_from = {}
     g_score = {start: 0}
+    visited = np.zeros_like(grid)
 
     def heuristic(a, b):
-        return abs(a[0] - b[0]) + abs(a[1] - b[1])  # Manhattan
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
     while not open_set.empty():
         _, current = open_set.get()
+        visited[current[0], current[1]] += 1  # ✅ biriktir!
 
         if current == goal:
-            # Yol oluştur
             path = []
             while current in came_from:
                 path.append(current)
                 current = came_from[current]
             path.append(start)
-            return path[::-1]  # Ters çevir
+            return path[::-1], visited
 
         neighbors = [
             (current[0]+1, current[1]),
@@ -49,7 +41,7 @@ def astar(grid, start, goal):
         for neighbor in neighbors:
             r, c = neighbor
             if 0 <= r < rows and 0 <= c < cols:
-                if grid[r, c] == 1:  # Engel
+                if grid[r, c] == 1:
                     continue
                 tentative_g = g_score[current] + 1
                 if neighbor not in g_score or tentative_g < g_score[neighbor]:
@@ -58,83 +50,145 @@ def astar(grid, start, goal):
                     open_set.put((f_score, neighbor))
                     came_from[neighbor] = current
 
-    return None  # Yol bulunamadı
+    return None, visited
 
 
-# ----------------------------------
-# Statik Grid + Dinamik Engel Simüle
-# ----------------------------------
-
-# Grid boyutları
+# ---------------------------
+# Grid ve parametreler
 rows, cols = 50, 50
 grid = np.zeros((rows, cols))
-
-# Statik engeller (kara)
 grid[10:15, 5:45] = 1
 grid[30:35, 5:45] = 1
 
-# Başlangıç ve hedef
 start = (5, 5)
 goal = (45, 45)
 
-# Başlangıçta Global Path planla
-global_path = astar(grid, start, goal)
+# Global Path (statik engeller)
+global_path, _ = astar_with_visited(grid, start, goal)
 
-# -------------------------------
-# Simülasyon: Dinamik Engel + Local Planlama
-# -------------------------------
+# Dinamik engeller
+dynamic_obstacles = [
+    [25, 25],  # Engel 1
+    [20, 20]   # Engel 2
+]
 
-# Dinamik engel (örneğin bir diğer gemi)
-dynamic_obstacle_pos = [25, 25]
-
-# Araç pozisyonu (ilk başta start)
 vehicle_pos = list(start)
+key_pressed = []
 
-# Animasyon ayarları
-plt.ion()
+VEHICLE_STEP_INTERVAL = 5
+step_counter = 0
+
+# --- 1) Interaktif pencere (TkAgg)
 fig, ax = plt.subplots(figsize=(8, 8))
 
-for t in range(100):
-    # 1) Dinamik engel pozisyonunu değiştir (örneğin ileri geri)
-    dynamic_obstacle_pos[0] += (-1)**t  # basit hareket
+# --- 2) Video için arka planda Agg canvas
+fig2, ax2 = plt.subplots(figsize=(8, 8))
+canvas2 = FigureCanvasAgg(fig2)
 
-    # 2) Dinamik engeli grid'e yerleştir
+frames = []
+
+# Klavye dinleme
+def on_key(event):
+    global key_pressed
+    key_pressed.append(event.key)
+    print(f"Tuş basıldı: {event.key}")
+
+fig.canvas.mpl_connect('key_press_event', on_key)
+
+# ---------------------------
+# Simülasyon döngüsü
+# ---------------------------
+for t in range(150):
+    for key in key_pressed:
+        if key == 'up':
+            dynamic_obstacles[0][0] = max(0, dynamic_obstacles[0][0] - 1)
+        elif key == 'down':
+            dynamic_obstacles[0][0] = min(rows-1, dynamic_obstacles[0][0] + 1)
+        elif key == 'left':
+            dynamic_obstacles[0][1] = max(0, dynamic_obstacles[0][1] - 1)
+        elif key == 'right':
+            dynamic_obstacles[0][1] = min(cols-1, dynamic_obstacles[0][1] + 1)
+        elif key == 'w':
+            dynamic_obstacles[1][0] = max(0, dynamic_obstacles[1][0] - 1)
+        elif key == 's':
+            dynamic_obstacles[1][0] = min(rows-1, dynamic_obstacles[1][0] + 1)
+        elif key == 'a':
+            dynamic_obstacles[1][1] = max(0, dynamic_obstacles[1][1] - 1)
+        elif key == 'd':
+            dynamic_obstacles[1][1] = min(cols-1, dynamic_obstacles[1][1] + 1)
+    key_pressed = []
+
     local_grid = np.copy(grid)
-    dy, dx = dynamic_obstacle_pos
-    local_grid[dy, dx] = 1
+    for obs in dynamic_obstacles:
+        y, x = obs
+        local_grid[y, x] = 1
 
-    # 3) Araç konumundan hedefe local A* planla
-    local_path = astar(local_grid, tuple(vehicle_pos), goal)
-
+    local_path, visited = astar_with_visited(local_grid, tuple(vehicle_pos), goal)
     if local_path is None:
         print(f"[T={t}] Engel nedeniyle yol bulunamadı!")
         break
 
-    # 4) Bir adım ilerle
-    if len(local_path) > 1:
-        next_pos = local_path[1]
-        vehicle_pos = list(next_pos)
+    if step_counter % VEHICLE_STEP_INTERVAL == 0:
+        if len(local_path) > 1:
+            next_pos = local_path[1]
+            vehicle_pos = list(next_pos)
+    step_counter += 1
 
-    # 5) Görselleştir
+    # --- 1) Interaktif pencere
     ax.clear()
-    ax.imshow(local_grid, cmap='gray_r')
-    # Global path (mavi)
+    ax.imshow(local_grid, cmap='gray_r', alpha=0.5)
+    ax.imshow(visited, cmap='hot', alpha=0.5)  # ✅ visited biriktikçe renkli ısı haritası
     if global_path:
         gp = np.array(global_path)
         ax.plot(gp[:, 1], gp[:, 0], 'b--', label='Global Path')
-    # Local path (yeşil)
     lp = np.array(local_path)
     ax.plot(lp[:, 1], lp[:, 0], 'g-', label='Local Path')
-    # Dinamik engel (kırmızı)
-    ax.plot(dx, dy, 'rs', label='Dynamic Obstacle')
-    # Araç pozisyonu (sarı)
+    for i, obs in enumerate(dynamic_obstacles):
+        y, x = obs
+        ax.plot(x, y, 'rs', label=f'Dynamic Obstacle {i+1}')
     ax.plot(vehicle_pos[1], vehicle_pos[0], 'yo', label='Vehicle')
-    # Hedef (mor)
     ax.plot(goal[1], goal[0], 'm*', label='Goal')
+    ax.legend(loc='upper right')
+    ax.set_title(f"Timestep {t} | Local A* Renkli Isı Haritası")
 
-    ax.legend()
-    ax.set_title(f"Timestep {t}")
-    plt.pause(0.2)
+    # --- 2) Video için Agg
+    ax2.clear()
+    ax2.imshow(local_grid, cmap='gray_r', alpha=0.5)
+    ax2.imshow(visited, cmap='hot', alpha=0.5)
+    if global_path:
+        ax2.plot(gp[:, 1], gp[:, 0], 'b--', label='Global Path')
+    ax2.plot(lp[:, 1], lp[:, 0], 'g-', label='Local Path')
+    for i, obs in enumerate(dynamic_obstacles):
+        y, x = obs
+        ax2.plot(x, y, 'rs')
+    ax2.plot(vehicle_pos[1], vehicle_pos[0], 'yo')
+    ax2.plot(goal[1], goal[0], 'm*')
+    ax2.set_title(f"Timestep {t} | Video Frame")
+    ax2.legend(loc='upper right')
+    canvas2.draw()
+
+    w, h = fig2.canvas.get_width_height()
+    argb = np.frombuffer(canvas2.tostring_argb(), dtype='uint8').reshape(h, w, 4)
+    rgb = np.empty((h, w, 3), dtype='uint8')
+    rgb[..., 0] = argb[..., 1]
+    rgb[..., 1] = argb[..., 2]
+    rgb[..., 2] = argb[..., 3]
+    frames.append(rgb)
+
+    plt.pause(0.05)
 
 plt.ioff()
 plt.show()
+
+# ---------------------------
+# Video dosyası yaz
+# ---------------------------
+print("Videoyu kaydediyor...")
+
+h, w, _ = frames[0].shape
+out = cv2.VideoWriter('astar_simulation.mp4', cv2.VideoWriter_fourcc(*'mp4v'), 10, (w, h))
+for f in frames:
+    out.write(cv2.cvtColor(f, cv2.COLOR_RGB2BGR))
+out.release()
+
+print("Video kaydedildi: astar_simulation.mp4")
