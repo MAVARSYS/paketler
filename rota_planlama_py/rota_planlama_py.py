@@ -17,7 +17,8 @@ def astar_with_visited(grid, start, goal):
     visited = np.zeros_like(grid)
 
     def heuristic(a, b):
-        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+       return ((a[0]-b[0])**2 + (a[1]-b[1])**2)**0.5
+
 
     while not open_set.empty():
         _, current = open_set.get()
@@ -32,10 +33,14 @@ def astar_with_visited(grid, start, goal):
             return path[::-1], visited
 
         neighbors = [
-            (current[0]+1, current[1]),
-            (current[0]-1, current[1]),
-            (current[0], current[1]+1),
-            (current[0], current[1]-1)
+    (current[0]+1, current[1]),
+    (current[0]-1, current[1]),
+    (current[0], current[1]+1),
+    (current[0], current[1]-1),
+    (current[0]+1, current[1]+1),
+    (current[0]+1, current[1]-1),
+    (current[0]-1, current[1]+1),
+    (current[0]-1, current[1]-1)
         ]
 
         for neighbor in neighbors:
@@ -82,8 +87,8 @@ step_counter = 0
 fig, ax = plt.subplots(figsize=(8, 8))
 
 # --- 2) Video için arka planda Agg canvas
-fig2, ax2 = plt.subplots(figsize=(8, 8))
-canvas2 = FigureCanvasAgg(fig2)
+# fig2, ax2 = plt.subplots(figsize=(8, 8))
+# canvas2 = FigureCanvasAgg(fig2)
 
 frames = []
 
@@ -98,7 +103,7 @@ fig.canvas.mpl_connect('key_press_event', on_key)
 # ---------------------------
 # Simülasyon döngüsü
 # ---------------------------
-for t in range(150):
+for t in range(500):
     for key in key_pressed:
         if key == 'up':
             dynamic_obstacles[0][0] = max(0, dynamic_obstacles[0][0] - 1)
@@ -152,30 +157,30 @@ for t in range(150):
     ax.set_title(f"Timestep {t} | Local A* Renkli Isı Haritası")
 
     # --- 2) Video için Agg
-    ax2.clear()
-    ax2.imshow(local_grid, cmap='gray_r', alpha=0.5)
-    ax2.imshow(visited, cmap='hot', alpha=0.5)
-    if global_path:
-        ax2.plot(gp[:, 1], gp[:, 0], 'b--', label='Global Path')
-    ax2.plot(lp[:, 1], lp[:, 0], 'g-', label='Local Path')
-    for i, obs in enumerate(dynamic_obstacles):
-        y, x = obs
-        ax2.plot(x, y, 'rs')
-    ax2.plot(vehicle_pos[1], vehicle_pos[0], 'yo')
-    ax2.plot(goal[1], goal[0], 'm*')
-    ax2.set_title(f"Timestep {t} | Video Frame")
-    ax2.legend(loc='upper right')
-    canvas2.draw()
+    # ax2.clear()
+    # ax2.imshow(local_grid, cmap='gray_r', alpha=0.5)
+    # ax2.imshow(visited, cmap='hot', alpha=0.5)
+    # if global_path:
+    #     ax2.plot(gp[:, 1], gp[:, 0], 'b--', label='Global Path')
+    # ax2.plot(lp[:, 1], lp[:, 0], 'g-', label='Local Path')
+    # for i, obs in enumerate(dynamic_obstacles):
+    #     y, x = obs
+    #     ax2.plot(x, y, 'rs')
+    # ax2.plot(vehicle_pos[1], vehicle_pos[0], 'yo')
+    # ax2.plot(goal[1], goal[0], 'm*')
+    # ax2.set_title(f"Timestep {t} | Video Frame")
+    # ax2.legend(loc='upper right')
+    # canvas2.draw()
 
-    w, h = fig2.canvas.get_width_height()
-    argb = np.frombuffer(canvas2.tostring_argb(), dtype='uint8').reshape(h, w, 4)
-    rgb = np.empty((h, w, 3), dtype='uint8')
-    rgb[..., 0] = argb[..., 1]
-    rgb[..., 1] = argb[..., 2]
-    rgb[..., 2] = argb[..., 3]
-    frames.append(rgb)
+    # w, h = fig2.canvas.get_width_height()
+    # argb = np.frombuffer(canvas2.tostring_argb(), dtype='uint8').reshape(h, w, 4)
+    # rgb = np.empty((h, w, 3), dtype='uint8')
+    # rgb[..., 0] = argb[..., 1]
+    # rgb[..., 1] = argb[..., 2]
+    # rgb[..., 2] = argb[..., 3]
+    # frames.append(rgb)
 
-    plt.pause(0.05)
+    plt.pause(0.01) # Oynatma hizini ayarlar
 
 plt.ioff()
 plt.show()
@@ -183,12 +188,14 @@ plt.show()
 # ---------------------------
 # Video dosyası yaz
 # ---------------------------
-print("Videoyu kaydediyor...")
+# print("Videoyu kaydediyor...")
 
-h, w, _ = frames[0].shape
-out = cv2.VideoWriter('astar_simulation.mp4', cv2.VideoWriter_fourcc(*'mp4v'), 10, (w, h))
-for f in frames:
-    out.write(cv2.cvtColor(f, cv2.COLOR_RGB2BGR))
-out.release()
+# h, w, _ = frames[0].shape
+# out = cv2.VideoWriter('astar_simulation.mp4', cv2.VideoWriter_fourcc(*'mp4v'), 10, (w, h))
+# for f in frames:
+#     out.write(cv2.cvtColor(f, cv2.COLOR_RGB2BGR))
+# out.release()
 
-print("Video kaydedildi: astar_simulation.mp4")
+# print("Video kaydedildi: astar_simulation.mp4")
+
+exit()
