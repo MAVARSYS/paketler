@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8" />
+    <title>Rota Planlama</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <style>
+        #map { height: 90vh; width: 100%; }
+        #controls {
+            padding: 10px;
+            background: white;
+            text-align: center;
+        }
+        button {
+            margin: 0 10px;
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+        .selected {
+            background-color: #4CAF50;
+            color: white;
+        }
+        #bilgi {
+            margin-left: 15px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div id="controls">
+    <button id="hedefBtn">Hedef Ekle</button>
+    <button id="engelBtn">Engel Ekle</button>
+    <span id="bilgi">Lütfen önce mod seçin.</span>
+</div>
+
+<div id="map"></div>
+
+<script
+  src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"
+></script>
+<script>
+    const map = L.map('map').setView([41.0525, 28.5925], 16);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+    }).addTo(map);
+
+    let seciliMod = null;
+    const hedefBtn = document.getElementById('hedefBtn');
+    const engelBtn = document.getElementById('engelBtn');
+    const bilgi = document.getElementById('bilgi');
+
+    hedefBtn.onclick = () => {
+        seciliMod = 'hedef';
+        hedefBtn.classList.add('selected');
+        engelBtn.classList.remove('selected');
+        bilgi.textContent = "Hedef ekleme modundayız, haritaya tıklayın.";
+    };
+
+    engelBtn.onclick = () => {
+        seciliMod = 'engel';
+        engelBtn.classList.add('selected');
+        hedefBtn.classList.remove('selected');
+        bilgi.textContent = "Engel ekleme modundayız, haritaya tıklayın.";
+    };
+
+    function postJson(url, data) {
+        return fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        }).then(res => res.json());
+    }
+
+    map.on('click', function(e) {
+        if (!seciliMod) {
+            alert('Lütfen önce Hedef Ekle veya Engel Ekle modunu seçin!');
+            return;
+        }
+
+        const {lat, lng} = e.latlng;
+
+        if (seciliMod === 'hedef') {
+            // Marker ekle
+            L.marker([lat, lng], {
+                icon: L.icon({
+                    iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
+                    iconSize: [32, 32]
+                })
+            }).addTo(map).bindPopup('Hedef');
+
+            postJson('/api/hedef_kaydet', {lat: lat, lon: lng}).then(data => {
+                bilgi.textContent = data.status;
+            }).catch(() => {
+                alert('Hedef kaydetme başarısız!');
+            });
+        }
+
+        if (seciliMod === 'engel') {
+            L.circle([lat, lng], {
+                radius: 10,
+                color: 'red',
+                fillColor: '#f03',
+                fillOpacity: 0.5
+            }).addTo(map);
+
+            postJson('/api/engel_ekle', {lat: lat, lon: lng}).then(data => {
+                bilgi.textContent = data.status;
+            }).catch(() => {
+                alert('Engel ekleme başarısız!');
+            });
+        }
+    });
+</script>
+
+</body>
+</html>
